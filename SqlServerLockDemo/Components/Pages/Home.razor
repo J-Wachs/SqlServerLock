@@ -1,0 +1,157 @@
+﻿@page "/"
+@using Microsoft.Data.SqlClient
+@using Microsoft.EntityFrameworkCore
+@using SqlServerLock
+@using SqlServerLock.Interfaces
+@using SqlServerLock.Utils
+@using SqlServerLockDemo.Utils.Interfaces
+@inject DbContext dbContext
+@inject IConfiguration configuration
+@inject IDemoLock demoLock
+@inject ISqlServerLock sqlServerLock
+
+<PageTitle>Home</PageTitle>
+
+<h1>Sql Server Lock Demo</h1>
+
+<p>While the demo runs, take a look at the console screen to see progress messages.</p>
+
+<button type="button" onclick="@ProcessThatNeedRessource">Process that set a transaction lock and release it (debug to see)</button>
+<br /><br />
+<button type="button" onclick="@SetLock">Set exclusive session lock</button>
+<button type="button" onclick="@ReleaseLock">Release exclusive session lock</button>
+<br />
+<br />
+<p>Messages:</p>
+<FeedView @ref="feedView"/>
+
+<br />
+<p>To see the actual locks in the Sql Server, run the script below in the Sql Manager. </p>
+<p>Run it on the Sql Server you have stated in the connection string.</p>
+<p>
+    SELECT * FROM sys.dm_tran_locks<br />
+    where resource_type = 'APPLICATION'
+</p>
+
+@code {
+    private FeedView feedView = default!;
+    private int _taskNumber = 0;
+    private const string AnotherDemoLock = "AnotherDemoLock";
+
+    private void SetLock()
+    {
+        Console.WriteLine($"Will try to set lock '{AnotherDemoLock}'...");
+        feedView.AddMessage($"Will try to set lock '{AnotherDemoLock}'...");
+        var result = sqlServerLock.SetLock("AnotherDemoLock", SqlServerLockMode.Exclusive, SqlServerLockOwner.Session, 300, dbContext);
+        if (result.IsSuccess)
+        {
+            Console.WriteLine($"Lock '{AnotherDemoLock}' set.");
+            feedView.AddMessage($"Lock '{AnotherDemoLock}' set.");
+        }
+        else
+        {
+            Console.WriteLine($"Lock '{AnotherDemoLock}' could not be set.");
+            feedView.AddMessage($"Lock '{AnotherDemoLock}' could not be set set.");
+            FormatMessages(result);
+        }
+    }
+
+    private void ReleaseLock()
+    {
+        Console.WriteLine($"Will try to release lock '{AnotherDemoLock}'...");
+        feedView.AddMessage($"Will try to release lock '{AnotherDemoLock}'...");
+        var result = sqlServerLock.ReleaseLock("AnotherDemoLock", SqlServerLockOwner.Session, dbContext);
+        if (result.IsSuccess)
+        {
+            Console.WriteLine($"Lock '{AnotherDemoLock}' released.");
+            feedView.AddMessage($"Lock '{AnotherDemoLock}' released.");
+        }
+        else
+        {
+            Console.WriteLine($"Lock '{AnotherDemoLock}' could not be released.");
+            feedView.AddMessage($"Lock '{AnotherDemoLock}' could not be released.");
+            FormatMessages(result);
+        }
+    }
+
+    private async Task ProcessThatNeedRessource()
+    {
+        try
+        {
+            _taskNumber++;
+
+            // Please note.
+            // In order to demo the SqlServerLock class, new db context is created here 
+            // as it will create a new one for each invocation. In a real world application,
+            // you must determine how to go around this.
+            var connectionstring = configuration.GetConnectionString("default");
+            var optionsBuilder = new DbContextOptionsBuilder<DbContext>()
+                .UseSqlServer(connectionstring);
+
+            using (var dbContext = new DbContext(optionsBuilder.Options))
+            {
+                using var sqlTransaction = dbContext.Database.BeginTransaction();
+                Console.WriteLine($"Task {_taskNumber}: Will try to set lock...");
+                feedView.AddMessage($"Task {_taskNumber}: Will try to set lock...");
+
+                var result = demoLock.Set(dbContext);
+                if (result.IsSuccess)
+                {
+                    Console.WriteLine($"Task {_taskNumber}: Got the lock. Now simulating work for 10 sec.");
+                    feedView.AddMessage($"Task {_taskNumber}: Got the lock. Now simulating work for 10 sec.");
+
+                    // We got the lock, so do our thing (simulate a task running):
+                    await Task.Delay(10000);
+
+                    // Finally, release lock.
+                    Console.WriteLine($"Task {_taskNumber}: Will try to release the lock...");
+                    feedView.AddMessage($"Task {_taskNumber}: Will try to release the lock...");
+                    result = demoLock.Release(dbContext);
+                    if (result.IsSuccess)
+                    {
+                        Console.WriteLine($"Task {_taskNumber}: Lock released.");
+                        feedView.AddMessage($"Task {_taskNumber}: Lock released.");
+                        dbContext.Database.CommitTransaction();
+                    }
+                    else
+                    {
+                        Console.WriteLine($"Task {_taskNumber}: Could not release lock.");
+                        feedView.AddMessage($"Task {_taskNumber}: Could not release lock.");
+                        FormatMessages(_taskNumber, result);
+                        dbContext.Database.RollbackTransaction();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Task {_taskNumber}: Could not get the lock.");
+                    feedView.AddMessage($"Task {_taskNumber}: Could not get the lock.");
+                    FormatMessages(_taskNumber, result);
+                }
+            }
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine(ex);
+        }
+        finally
+        {
+            _taskNumber--;
+        }
+    }
+
+    private void FormatMessages(Result result)
+    {
+        foreach(var oneMessage in result.Messages)
+        {
+            feedView.AddMessage(oneMessage);
+        }
+    }
+
+    private void FormatMessages(int taskNbr, Result result)
+    {
+        foreach (var oneMessage in result.Messages)
+        {
+            feedView.AddMessage($"Task {taskNbr}: {oneMessage}");
+        }
+    }
+}
