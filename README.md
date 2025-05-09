@@ -21,14 +21,10 @@ to set or release the lock, an error is returned to your application.
 
 Setting a lock require a number of parameters to be set:
 
-* Name of lock
-This is a name you give the lock.
-* Lock mode
-The mode of the lock: 1) Shared, 2) Update, 3) IntentShared, 4) IntentExclusive, 5) Exclusive.
-* Lock owner
-The lock owner can be one of two types: 1) Session, 2) Transaction. What to use, depend on your secnario.
-* Timeout value
-Number of seconds to wait for trying to get a lock. If it is not possible to obtain the lock within this time frame, an
+* Name of lock: This is a name you give the lock.
+* Lock mode: The mode of the lock: 1) Shared, 2) Update, 3) IntentShared, 4) IntentExclusive, 5) Exclusive.
+* Lock owner: The lock owner can be one of two types: 1) Session, 2) Transaction. What to use, depend on your secnario.
+* Timeout value: Number of seconds to wait for trying to get a lock. If it is not possible to obtain the lock within this time frame, an
 * error is returned.
 
 For more details about these parameters, please see the Microsoft documentation:
